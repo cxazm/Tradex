@@ -4,7 +4,7 @@ all: build
 # Build the Go project
 build:
 	@echo "Building the project..."
-	go build -o exe/Tradex cmd/main.go
+	go build -o bin/Tradex cmd/main.go
 
 # Run tests
 test:
@@ -19,7 +19,7 @@ clean:
 # Run the project
 run: build
 	@echo "Running the project..."
-	./exe/Tradex
+	./bin/Tradex
 
 # Tidy up Go modules
 tidy:
