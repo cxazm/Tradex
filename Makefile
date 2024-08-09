@@ -1,29 +1,39 @@
 # Defined main target of the Makefile
-all: build
+all: build-backend build-frontend
 
-# Build the Go project
-build:
-	@echo "Building the project..."
-	go build -o bin/Tradex cmd/main.go
+# Build the  project
+build-backend:
+	@echo "Building Go project..."
+	cd backend && go build -o bin/Tradex cmd/main.go
 
-# Run tests
-test:
-	@echo "Running tests..."
-	go test ./...
+# Run tests for  project
+test-backend:
+	@echo "Running tests for Go project..."
+	cd backend && go test ./...
 
-# Clean up the project
-clean:
-	@echo "Cleaning up..."
-	rm -f Tradex/Tradex
+# Clean up the Go project
+clean-backend:
+	@echo "Cleaning up Go project..."
+	cd backend && rm -f bin/Tradex
 
-# Run the project
-run: build
-	@echo "Running the project..."
-	./bin/Tradex
+# Run the Go project
+run-backend: build-backend
+	@echo "Running Go project..."
+	./backend/bin/Tradex
 
 # Tidy up Go modules
-tidy:
+tidy-backend:
 	@echo "Tidying up Go modules..."
-	go mod tidy
+	cd backend && go mod tidy
 
-.PHONY: all build test clean run tidy
+# Start Next.js development server
+dev-frontend:
+	@echo "Starting Next.js development server..."
+	cd frontend && npm run dev
+
+# Build Next.js production bundle
+build-frontend:
+	@echo "Building Next.js production bundle..."
+	cd frontend && npm run build
+
+.PHONY: all build-backend test-backend clean-backend run-backend tidy-backend dev-frontend build-frontend

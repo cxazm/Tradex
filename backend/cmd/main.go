@@ -1,105 +1,150 @@
 package main
 
 import (
-    "fmt"
-    "net/http"
-    "sync"
-    "time"
-    "math/rand"
+	"encoding/json"
+	"fmt"
+	"math/rand"
+	"net/http"
+	"sync"
+	"time"
 
-    "github.com/gorilla/websocket"
+	"github.com/gorilla/websocket"
 )
 
+// Order represents a trade order
 type Order struct {
-    ID        int
-    Side      string  // "buy" or "sell"
-    Symbol    string
-    Price     float64
-    Quantity  int
-    Timestamp time.Time
+	ID        int
+	Side      string // "buy" or "sell"
+	Symbol    string
+	Price     float64
+	Quantity  int
+	Timestamp time.Time
 }
 
+// Order book represents the order book
 type OrderBook struct {
-    BuyOrders  []Order
-    SellOrders []Order
-    mu         sync.Mutex
+	BuyOrders  []*Order
+	SellOrders []*Order
+	mu         sync.RWMutex
 }
 
-var upgrader = websocket.Upgrader{}
+// New order book to return a new order book
+func NewOrderBook() *OrderBook {
+	return &OrderBook{
+		BuyOrders:  make([]*Order, 0),
+		SellOrders: make([]*Order, 0),
+	}
+}
 
+// Add order to the order book
+func (ob *OrderBook) AddOrder(order *Order) {
+	ob.mu.Lock()
+	defer ob.mu.Unlock()
+
+	if order.Side == "buy" {
+		ob.BuyOrders = append(ob.BuyOrders, order)
+	} else {
+		ob.SellOrders = append(ob.SellOrders, order)
+	}
+}
+
+// Match orders buy and sell orders
 func (ob *OrderBook) MatchOrders() {
-    ob.mu.Lock()
-    defer ob.mu.Unlock()
+	ob.mu.Lock()
+	defer ob.mu.Unlock()
 
-    if len(ob.BuyOrders) > 0 && len(ob.SellOrders) > 0 {
-        // Match highest buy with lowest sell
-        buyOrder := ob.BuyOrders[0]
-        sellOrder := ob.SellOrders[0]
-        if buyOrder.Price >= sellOrder.Price {
-            fmt.Printf("Matched! Buy Order: %+v with Sell Order: %+v\n", buyOrder, sellOrder)
-            ob.BuyOrders = ob.BuyOrders[1:]
-            ob.SellOrders = ob.SellOrders[1:]
-        }
-    }
+	for len(ob.BuyOrders) > 0 && len(ob.SellOrders) > 0 {
+		buyOrder := ob.BuyOrders[0]
+		sellOrder := ob.SellOrders[0]
+
+		if buyOrder.Price >= sellOrder.Price {
+			// Execute trade
+			fmt.Printf("Trade executed: %+v\n", buyOrder)
+			ob.BuyOrders = ob.BuyOrders[1:]
+			ob.SellOrders = ob.SellOrders[1:]
+		} else {
+			break
+		}
+	}
 }
 
-func (ob *OrderBook) AddOrder(order Order) {
-    ob.mu.Lock()
-    defer ob.mu.Unlock()
+// returns the current orders in the order book
+func (ob *OrderBook) GetOrders() ([]*Order, []*Order) {
+	ob.mu.RLock()
+	defer ob.mu.RUnlock()
 
-    if order.Side == "buy" {
-        ob.BuyOrders = append(ob.BuyOrders, order)
-    } else {
-        ob.SellOrders = append(ob.SellOrders, order)
-    }
+	return ob.BuyOrders, ob.SellOrders
 }
 
-func priceWebSocket(w http.ResponseWriter, r *http.Request) {
-    conn, _ := upgrader.Upgrade(w, r, nil)
-    defer conn.Close()
+func simulatePrices() (bid float64, ask float64) {
+	// Random walk parameters
+	mu := 0.0001  // mean
+	sigma := 0.01 // standard deviation
+	dt := 1.0     // time step
 
-    for {
-        eurusd, btcusd := simulatePrices()
-        data := map[string]float64{
-            "EURUSD": eurusd,
-            "BTCUSD": btcusd,
-        }
-        conn.WriteJSON(data)
-        time.Sleep(1 * time.Second)
-    }
+	// Previous prices
+	prevBid := 1.1000
+	prevAsk := 1.1010
+
+	// Random walk
+	bid = prevBid + mu*dt + sigma*rand.NormFloat64()
+	ask = prevAsk + mu*dt + sigma*rand.NormFloat64()
+
+	return bid, ask
 }
 
-func orderWebSocket(w http.ResponseWriter, r *http.Request) {
-    conn, _ := upgrader.Upgrade(w, r, nil)
-    defer conn.Close()
-
-    orderBook := OrderBook{}
-
-    for {
-        var order Order
-        err := conn.ReadJSON(&order)
-        if err != nil {
-            fmt.Println("Error reading JSON:", err)
-            break
-        }
-
-        fmt.Printf("Received Order: %+v\n", order)
-        orderBook.AddOrder(order)
-        orderBook.MatchOrders()
-
-        // send updated order book state back to client
-        conn.WriteJSON(orderBook)
-    }
-}
-
-func simulatePrices() (float64, float64) {
-    eurusd := 1.10 + rand.Float64()*0.01
-    btcusd := 30000.00 + rand.Float64()*1000.00
-    return eurusd, btcusd
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
 }
 
 func main() {
-    http.HandleFunc("/ws", priceWebSocket)
-    http.HandleFunc("/order", orderWebSocket)
-    http.ListenAndServe(":8080", nil)
+	fmt.Println("Starting server...")
+
+	orderBook := NewOrderBook()
+
+	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			fmt.Println("Error upgrading WebSocket connection:", err)
+			return
+		}
+		defer conn.Close()
+
+		for {
+			eurusd, btcusd := simulatePrices()
+			data := map[string]float64{
+				"EURUSD": eurusd,
+				"BTCUSD": btcusd,
+			}
+			conn.WriteJSON(data)
+			time.Sleep(1 * time.Second)
+		}
+	})
+
+	http.HandleFunc("/order", func(w http.ResponseWriter, r *http.Request) {
+		var order Order
+		err := json.NewDecoder(r.Body).Decode(&order)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		orderBook.AddOrder(&order)
+		orderBook.MatchOrders()
+
+		buyOrders, sellOrders := orderBook.GetOrders()
+		data := map[string]interface{}{
+			"buyOrders":  buyOrders,
+			"sellOrders": sellOrders,
+		}
+		json.NewEncoder(w).Encode(data)
+	})
+	fmt.Println("Server listening on port 8080...")
+
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		fmt.Println("Error starting server:", err)
+	}
 }
