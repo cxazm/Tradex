@@ -1,57 +1,41 @@
 "use client";
+import ForexPriceWidget from './components/ForexPriceWidget';
+import PriceChart from './components/PriceChart';
+import TradingWidget from './components/TradingWidget';
+import DepthOfMarket from './components/DepthOfMarket';
+import PositionTable from './components/PositionTable';
 
-import { useState, useEffect } from 'react';
-import { Line } from 'react-chartjs-2';
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
-
-// Register components with ChartJS
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
-
-const useWebSocket = (url) => {
-  const [prices, setPrices] = useState({ EURUSD: 0, BTCUSD: 0 });
-  const [chartData, setChartData] = useState({
-    labels: [],
-    datasets: [{
-      label: 'EUR/USD',
-      data: [],
-      borderColor: 'rgba(255, 99, 132, 1)',
-      backgroundColor: 'rgba(255, 99, 132, 0.2)',
-    }],
-  });
-
-  useEffect(() => {
-    const ws = new WebSocket(url);
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      setPrices(data);
-      setChartData(prevData => ({
-        labels: [...prevData.labels, new Date().toLocaleTimeString()],
-        datasets: [{
-          ...prevData.datasets[0],
-          data: [...prevData.datasets[0].data, data.EURUSD],
-        }],
-      }));
-    };
-    return () => ws.close();
-  }, [url]);
-
-  return { prices, chartData };
-};
 
 export default function Home() {
-  const { prices, chartData } = useWebSocket("ws://localhost:8080/ws");
-
   return (
-    <div>
-      <h1>Trading Dashboard</h1>
-      <div>
-        <Line data={chartData} options={{ responsive: true, plugins: { legend: { position: 'top' }, title: { display: true, text: 'EUR/USD Prices' }}}} />
+    <div className="flex flex-col  min-h-screen bg-gray-900 text-white">
+      <h1 className="text-xl font-semibold mt-4 mb-4 text-center text-teal-300">Visualizer Dashboard</h1>
+      
+      <div className="flex justify-center items-start gap-8 w-full max-w-screen-xl">
+        {/* Price Chart */}
+        <div className="flex-1 ml-14 ">
+          <PriceChart />
+        </div>
+        
+        <div className="flex flex-col justify-center">
+          {/* Price Widget */}
+          <div className="flex flex-col justify-center">
+            <ForexPriceWidget />
+            <div className="mt-6">
+              <DepthOfMarket />
+            </div>
+            </div>
+          </div>
+
+        {/* Trading Widget */}
+        <div className="flex flex-col justify-center">
+          <TradingWidget />
+        </div>
       </div>
-      <div>
-        <h2>EUR/USD: {prices.EURUSD}</h2>
-      </div>
-      <div>
-        <h2>BTC/USD: {prices.BTCUSD}</h2>
+
+      {/* Open Positions table */}
+      <div className=" mt-2 -mr-60">
+         <PositionTable />
       </div>
     </div>
   );
