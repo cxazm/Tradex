@@ -1,74 +1,122 @@
-
 import { createChart, ColorType } from 'lightweight-charts';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
+export const ChartComponent = ({ data, colors }) => {
+  const chartContainerRef = useRef();
+  const chart = useRef();
+  const resizeObserver = useRef();
 
-export const ChartComponent = (props) => {
-    const {
-        data,
-        colors: {
-            backgroundColor = 'black',
-            textColor = 'white',
-        } = {},
-    } = props;
+  useEffect(() => {
+    chart.current = createChart(chartContainerRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: colors.backgroundColor },
+        textColor: colors.textColor,
+      },
+      grid: {
+        vertLines: { color: 'rgba(197, 203, 206, 0.1)' },
+        horzLines: { color: 'rgba(197, 203, 206, 0.1)' },
+      },
+      crosshair: {
+        mode: 0,
+      },
+      rightPriceScale: {
+        borderColor: 'rgba(197, 203, 206, 0.8)',
+      },
+      timeScale: {
+        borderColor: 'rgba(197, 203, 206, 0.8)',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
 
-    const chartContainerRef = useRef();
+    const candlestickSeries = chart.current.addCandlestickSeries({
+      upColor: colors.upColor,
+      downColor: colors.downColor,
+      borderDownColor: colors.downColor,
+      borderUpColor: colors.upColor,
+      wickDownColor: colors.downColor,
+      wickUpColor: colors.upColor,
+    });
 
-    useEffect(() => {
-        const handleResize = () => {
-            chart.applyOptions({ width: chartContainerRef.current.clientWidth });
-        };
+    candlestickSeries.setData(data);
 
-        const chart = createChart(chartContainerRef.current, {
-            layout: {
-                background: { type: ColorType.Solid, color: backgroundColor },
-                textColor,
-            },
-            width: 600,
-            height: 327,
-        });
+    //resize observer
+    resizeObserver.current = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      chart.current.applyOptions({ width, height });
+      setTimeout(() => {
+        chart.current.timeScale().fitContent();
+      }, 0);
+    });
 
-        chart.timeScale().fitContent();
+    resizeObserver.current.observe(chartContainerRef.current);
 
-        const candlestickSeries = chart.addCandlestickSeries({
-            upColor: '#4caf50', // Green for bullish candles
-            downColor: '#f44336', // Red for bearish candles
-            borderDownColor: '#f44336',
-            borderUpColor: '#4caf50',
-            wickDownColor: '#f44336',
-            wickUpColor: '#4caf50',
-        });
+    return () => {
+      chart.current.remove();
+      resizeObserver.current.disconnect();
+    };
+  }, [data, colors]);
 
-        candlestickSeries.setData(data);
-
-        window.addEventListener('resize', handleResize);
-
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            chart.remove();
-        };
-    }, [data, backgroundColor, textColor]);
-
-    return <div ref={chartContainerRef} />;
+  return <div ref={chartContainerRef} style={{ width: '500px', height: '370px' }} />;
 };
 
-const initialData = [
-    { time: '2018-12-22', open: 32.51, high: 33.51, low: 32.01, close: 33.11 },
-    { time: '2018-12-23', open: 33.11, high: 33.91, low: 32.11, close: 33.51 },
-    { time: '2018-12-24', open: 33.51, high: 34.01, low: 32.81, close: 33.01 },
-    { time: '2018-12-25', open: 33.01, high: 33.81, low: 32.61, close: 33.71 },
-    { time: '2018-12-26', open: 33.71, high: 34.11, low: 33.01, close: 33.21 },
-    { time: '2018-12-27', open: 33.21, high: 34.51, low: 33.11, close: 34.01 },
-    { time: '2018-12-28', open: 34.01, high: 34.21, low: 33.31, close: 33.41 },
-    { time: '2018-12-29', open: 33.41, high: 34.31, low: 33.21, close: 34.11 },
-    { time: '2018-12-30', open: 34.11, high: 34.91, low: 33.91, close: 34.71 },
-    { time: '2018-12-31', open: 34.71, high: 35.01, low: 34.41, close: 34.91 },
-];
+const PriceChart = () => {
+  const [chartData, setChartData] = useState([]);
 
-const PriceChart = (props) => {
+  useEffect(() => {
+    const ws = new WebSocket('ws://localhost:8080/ws');
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.candles && data.candles['BTCUSD']) {
+        const newCandle = data.candles['BTCUSD'];
+        const timestamp = Math.floor(newCandle.timestamp / (5 * 60)) * (5 * 60);
+        setChartData(prevData => {
+          const lastCandle = prevData[prevData.length - 1];
+          if (lastCandle && lastCandle.time === timestamp) {
+            // update the last candle
+            return [
+              ...prevData.slice(0, -1),
+              {
+                time: timestamp,
+                open: lastCandle.open,
+                high: Math.max(lastCandle.high, newCandle.high),
+                low: Math.min(lastCandle.low, newCandle.low),
+                close: newCandle.close
+              }
+            ];
+          } else {
+            // add a new candle
+            return [...prevData, {
+              time: timestamp,
+              open: newCandle.open,
+              high: newCandle.high,
+              low: newCandle.low,
+              close: newCandle.close
+            }];
+          }
+        });
+      }
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, []);
+
+  const chartColors = {
+    backgroundColor: '#1e293b',
+    textColor: '#e2e8f0',
+    upColor: '#10b981',
+    downColor: '#ef4444',
+  };
+
   return (
-    <ChartComponent {...props} data={initialData}></ChartComponent>
-  )
-}
+    <>
+      <h2 className="text-center text-sm font-semibold mb-1 text-gray-300">BTCUSD Price Chart (5 min)</h2>
+      <ChartComponent data={chartData} colors={chartColors} />
+    </>
+  );
+};
 
-export default PriceChart
+export default PriceChart;

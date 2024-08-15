@@ -1,21 +1,42 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 const ForexPriceWidget = () => {
-  const [bidPrice, setBidPrice] = useState('1.2345'); 
-  const [askPrice, setAskPrice] = useState('1.2348'); 
-  const [symbol, setSymbol] = useState('EURUSD');
+  const [bidPrice, setBidPrice] = useState('50000.00');
+  const [askPrice, setAskPrice] = useState('50000.00');
+  const symbol = 'BTCUSD';
 
-  useEffect(() => {
-    const fetchPrices = () => {
-      
-      setBidPrice((Math.random() * 0.01 + 1.2340).toFixed(4));
-      setAskPrice((Math.random() * 0.01 + 1.2345).toFixed(4));
+  const connectWebSocket = useCallback(() => {
+    const ws = new WebSocket('ws://localhost:8080/ws');
+
+    ws.onopen = () => {
+      console.log('WebSocket connected');
     };
 
-    fetchPrices();
-    const interval = setInterval(fetchPrices, 1000); 
-    return () => clearInterval(interval);
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.orderBooks && data.orderBooks[symbol]) {
+        const orderBook = data.orderBooks[symbol];
+        if (orderBook.bids.length > 0 && orderBook.asks.length > 0) {
+          setBidPrice(orderBook.bids[0].price.toFixed(2));
+          setAskPrice(orderBook.asks[0].price.toFixed(2));
+        }
+      }
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      setTimeout(connectWebSocket, 5000);
+    };
+
+    return ws;
   }, []);
+
+  useEffect(() => {
+    const ws = connectWebSocket();
+    return () => {
+      ws.close();
+    };
+  }, [connectWebSocket]);
 
   return (
     <div className='w-72 p-6 bg-gray-800 rounded-md text-white shadow-md text-center'>
